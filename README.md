@@ -1,243 +1,516 @@
 # Business OS
 
-## What this is
+**Run your back-office on autopilot.** 7 AI agent crews handle lead gen, market research, hiring, task tracking, employee ops, finance, and customer success — while you focus on building.
 
-Business OS is a multi-crew autonomous agent system that automates lead generation, market research, recruitment, task management, employee operations, finance, and customer success workflows. It is built with CrewAI for agent execution, FastAPI for REST access, and SQLAlchemy for persistent storage in SQLite or PostgreSQL.
+```
+                        ┌──────────────────────────────────────────────────────┐
+                        │               BUSINESS OS PIPELINE                   │
+                        │                                                      │
+  CLI / API / Cron ───▶ │  Orchestrator ──▶ Crew 1 ──▶ Crew 2 ──▶ ... ──▶ DB │
+                        │       │                                         │    │
+                        │       └── Flow Engine (cross-crew chaining) ────┘    │
+                        │                        │                             │
+                        │              Pinecone Vector Memory                  │
+                        │              Slack Alerts & Reports                   │
+                        └──────────────────────────────────────────────────────┘
+```
 
-## Crews
+![License](https://img.shields.io/badge/license-MIT-blue.svg)
+![Python](https://img.shields.io/badge/python-3.10%2B-brightgreen.svg)
+![CrewAI](https://img.shields.io/badge/CrewAI-0.70%2B-purple.svg)
+![FastAPI](https://img.shields.io/badge/FastAPI-REST%20API-009688.svg)
+![LLM](https://img.shields.io/badge/LLM-Ollama%20%7C%20Gemini%20%7C%20OpenAI%20%7C%20OpenRouter-orange.svg)
 
-| Crew name | Agents inside it | What triggers it | What it produces |
-|-----------|------------------|------------------|------------------|
-| `lead_gen` | Lead Prospector, Data Enricher, ICP Scorer and CRM Writer, Client Intelligence Researcher, Cold Email Personalization Agent | CLI, API, scheduler Monday 09:30 | Qualified leads, potential-client outreach lists, and custom cold email drafts |
-| `market_research` | Market Analyst, Trend Scout, Research Reporter | CLI, API, scheduler Monday 09:00 | Market research reports |
-| `recruitment` | Job Description Writer, Talent Sourcer, Resume Screener | CLI or API | Job descriptions and candidate records |
-| `task_management` | Task Assigner, Progress Tracker, Escalation Agent | CLI, API, scheduler daily 07:00 | Assigned tasks, progress checks, Slack escalations |
-| `employee_ops` | Employee Check-in Bot, Progress Logger, HR Operations Bot | CLI, API, scheduler daily 07:15 | Standup prompts and employee task summaries |
-| `finance` | Expense Tracker, Invoice Generator, KPI Dashboard Builder | CLI, API, scheduler Friday 18:00 | Categorized expenses, invoice reports, KPI dashboard reports |
-| `customer_success` | Customer Health Scorer, Churn Detector, NPS Outreach Agent | CLI, API, scheduler Friday 18:30 | Customer health updates, churn alerts, NPS email drafts |
+---
 
-## Quick start
+## 🎯 What This Does
+
+Business OS replaces manual back-office work with autonomous agent crews. Each crew is a team of specialized AI agents that collaborate, use real tools, and write results to a shared database.
+
+You give it a trigger. It gives you back structured, actionable output.
+
+| Use Case | You Provide | What the Crew Does | You Get Back |
+|---|---|---|---|
+| **B2B Lead Generation** | Target industry, lead count | Market Research crew finds trends → Lead Gen crew scrapes company sites into vector memory → Intelligence agent extracts pricing & contacts → Auditor writes hyper-personalized cold emails | Qualified leads in CRM with ICP scores + ready-to-send outreach emails |
+| **Market Intelligence** | A topic (e.g., "AI automation tools") | Market Analyst maps competitors → Trend Scout finds emerging signals → Reporter synthesizes everything | Executive-ready research report saved to DB |
+| **Automated Hiring Pipeline** | Role title + requirements | JD Writer drafts the posting → Talent Sourcer searches LinkedIn/GitHub → Resume Screener scores and saves | Job description + scored candidate pipeline |
+| **Weekly Finance Ops** | Nothing (runs on schedule) | Expense Tracker categorizes spend → Invoice Generator drafts invoices for qualified leads → KPI Builder computes weekly metrics | Categorized expenses, invoices, and a KPI dashboard report |
+
+> **"I'm a founder who needs…"** leads without cold-calling → run `lead_gen`
+>
+> **"I'm a VP Eng who needs…"** to know which tasks are blocked → run `task_management`
+>
+> **"I'm a CS lead who needs…"** churn alerts before it's too late → run `customer_success`
+
+---
+
+## 🏗 Architecture
+
+### The Full Pipeline
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                           TRIGGER LAYER                                 │
+│   ┌─────────┐    ┌──────────────────┐    ┌────────────────────────┐    │
+│   │   CLI   │    │   FastAPI REST   │    │   Cron Scheduler       │    │
+│   │         │    │   POST /run      │    │   Daily 07:00, 07:15   │    │
+│   │         │    │   GET /leads     │    │   Mon  09:00, 09:30    │    │
+│   │         │    │   GET /reports   │    │   Fri  18:00, 18:30    │    │
+│   └────┬────┘    └────────┬─────────┘    └───────────┬────────────┘    │
+│        └──────────────────┼──────────────────────────┘                  │
+│                           ▼                                             │
+│                  ┌─────────────────┐                                    │
+│                  │  ORCHESTRATOR   │                                    │
+│                  │  orchestrator.py│                                    │
+│                  └────────┬────────┘                                    │
+│                           │                                             │
+│              ┌────────────┼─────────────┐                              │
+│              ▼            ▼             ▼                               │
+│     ┌────────────┐ ┌───────────┐ ┌───────────────┐                    │
+│     │ Flow Engine│ │Direct Crew│ │ Daily Ops     │                    │
+│     │ (chained)  │ │ Execution │ │ Cycle         │                    │
+│     └────────────┘ └───────────┘ └───────────────┘                    │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+### Lead Gen Flow — Cross-Crew Chaining in Action
+
+This is the most advanced pipeline. Two crews execute in sequence, with the first crew's output injected as context into the second:
+
+```
+  ┌────────────────────────── LEAD GEN FLOW (flows.py) ──────────────────────────┐
+  │                                                                               │
+  │  PHASE 1: Market Intelligence                                                 │
+  │  ┌──────────────┐    ┌──────────────┐    ┌──────────────────┐                │
+  │  │Market Analyst │──▶│ Trend Scout  │──▶│ Research Reporter │                │
+  │  │              │    │              │    │                  │                │
+  │  │ Serper search│    │ Serper search│    │ Save report to DB│                │
+  │  └──────────────┘    └──────────────┘    └────────┬─────────┘                │
+  │                                                    │                          │
+  │                              ┌─────────────────────┘                          │
+  │                              ▼                                                │
+  │                   ╔══════════════════════╗                                    │
+  │                   ║  CONTEXT INJECTION   ║                                    │
+  │                   ║  Research report is   ║                                    │
+  │                   ║  injected into Lead   ║                                    │
+  │                   ║  Gen Crew's first task║                                    │
+  │                   ╚══════════╤═══════════╝                                    │
+  │                              ▼                                                │
+  │  PHASE 2: Targeted Prospecting                                                │
+  │  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐   ┌─────────────┐  │
+  │  │Lead Prospector│──▶│Intel Analyst │──▶│CRM & Outreach│──▶│  Compliance │  │
+  │  │              │    │              │    │   Manager    │   │   Auditor   │  │
+  │  │Serper search │    │Pinecone query│    │Deterministic │   │Save to CRM  │  │
+  │  │Crawl4AI      │    │Serper search │    │ICP scoring   │   │Email QA     │  │
+  │  │  + Pinecone  │    │              │    │Email drafting│   │             │  │
+  │  └──────────────┘    └──────────────┘    └──────────────┘   └─────────────┘  │
+  │       │                    │                                       │          │
+  │       ▼                    ▼                                       ▼          │
+  │  ┌──────────┐       ┌──────────┐                            ┌──────────┐     │
+  │  │ Pinecone │◀─────▶│ Pinecone │                            │ SQLite / │     │
+  │  │ (write)  │       │ (read)   │                            │ Postgres │     │
+  │  └──────────┘       └──────────┘                            └──────────┘     │
+  └───────────────────────────────────────────────────────────────────────────────┘
+```
+
+> **Why this works:** Most AI lead gen tools search and blast. Business OS does research *first* — it maps the market landscape, identifies pain points, then prospects into those exact niches. The Lead Prospector scrapes target websites into vector memory, the Intel Analyst queries that same memory for pricing tiers and tech stacks, and the Outreach Manager writes cold emails referencing *actual facts from their website*. A compliance auditor catches hallucinated placeholders before anything hits the CRM.
+
+### How Crews Collaborate
+
+Agents don't run in isolation. Four coordination mechanisms keep them in sync:
+
+| Mechanism | How It Works | Example |
+|---|---|---|
+| **Cross-Crew Flows** | CrewAI Flow chains crews sequentially, injecting output as context | Market Research report feeds into Lead Gen prospecting |
+| **Shared Database** | SQLite/Postgres acts as a persistent message board between crews | Finance crew reads leads table to generate invoices |
+| **Vector Memory Pool** | Pinecone stores scraped website content as embeddings | Prospector writes, Intel Analyst reads the same vectors |
+| **Slack Escalations** | Crews post alerts to human workspaces for high-priority events | Task Management sends overdue alerts; Customer Success sends churn warnings |
+
+---
+
+## ⚡ Quick Start
+
+### 1. Install
 
 ```bash
-git clone <your-repo-url>
+git clone https://github.com/00Harshh/multi-agent-business-os.git
 cd business_os
 pip install -r requirements.txt
 cp .env.example .env
-ollama pull llama3.1
-python -m business_os.storage.seed
-python -m business_os.orchestrator lead_gen target_industry=fintech num_leads=5
-uvicorn business_os.api:app --reload
+# Edit .env — set at least LLM_PROVIDER and one API key
 ```
 
-## Configuration & Credentials Security
+### 2. Seed the database
 
-To run the Business OS pipeline, you must configure API keys and credentials. 
+```bash
+python -m business_os.storage.seed
+```
 
-> [!WARNING]
-> **Never commit real secrets or API keys to your GitHub repository!**
-> The `config/api_keys.py` file is committed to Git with clean, empty placeholders and should **never** be populated with active keys. Always use the local `.env` file for your private credentials.
+### 3. Run a crew
 
-### Setup Instructions
+```bash
+# Generate 5 leads in the fintech industry
+python -m business_os.orchestrator lead_gen target_industry=fintech num_leads=5
 
-1. Copy the example environment file:
-   ```bash
-   cp .env.example .env
-   ```
-2. Open the new `.env` file and populate it with your active API keys (e.g., `GEMINI_API_KEY`, `SERPER_API_KEY`, `PINECONE_API_KEY`). 
-3. The system automatically reads `.env` variables at startup and syncs them to active environments (such as LiteLLM, CrewAI, and vector clients).
+# Research AI automation market
+python -m business_os.orchestrator market_research topic="AI automation tools"
 
-### Configuration Options
+# Run daily ops (task assignment + employee check-ins)
+python -m business_os.orchestrator task_management
+```
 
-| Variable | Required | Default / Placeholder | Description |
-|----------|----------|-----------------------|-------------|
-| `LLM_PROVIDER` | No | `ollama` | LLM backend: `ollama`, `gemini`, `openai`, or `openrouter` |
-| `OPENROUTER_API_KEY` | No | Empty | OpenRouter API key for LLM execution |
-| `OPENROUTER_MODEL` | No | `google/gemini-2.5-flash:free` | Model name to use when `LLM_PROVIDER=openrouter` |
-| `GEMINI_API_KEY` | No | Empty | Google AI Studio API key for Gemini models |
-| `GEMINI_MODEL` | No | `gemini/gemini-2.5-flash` | Gemini model used when `LLM_PROVIDER=gemini` |
-| `OLLAMA_MODEL` | No | `llama3.1` | Local Ollama model name to use for all agents |
-| `OLLAMA_BASE_URL` | No | `http://localhost:11434` | Local Ollama server URL |
-| `OPENAI_API_KEY` | No | Empty | Optional hosted LLM fallback if you switch provider |
-| `OPENAI_MODEL` | No | `gpt-4o` | Optional OpenAI model if using OpenAI |
-| `DATABASE_URL` | No | `sqlite:///business_os.db` | SQLAlchemy database URL for SQLite or PostgreSQL |
-| `SERPER_API_KEY` | No | Empty | Web search API for market research, lead discovery, public LinkedIn results, and public Crunchbase results |
-| `PINECONE_API_KEY` | No | Empty | Pinecone API key for vector storage (knowledge retrieval) |
-| `PINECONE_INDEX_NAME` | No | `business-os-knowledge` | Pinecone index name to search/upsert crawled website data |
-| `LINKEDIN_API_KEY` | No | Empty | Reserved for future direct LinkedIn API integration |
-| `CRUNCHBASE_API_KEY` | No | Empty | Reserved for future direct Crunchbase API integration |
-| `SLACK_BOT_TOKEN` | No | Empty | Slack token for posting alerts and standup messages |
-| `SENDGRID_API_KEY` | No | Empty | SendGrid API key for future email integrations |
-| `COMPANY_NAME` | No | `Acme Corp` | Company name used by agents when drafting business content |
-| `ICP_DESCRIPTION` | No | `B2B SaaS companies with 10-200 employees in the US` | Ideal customer profile used by lead scoring agents |
+### 4. Or use the REST API
 
-## API reference
+```bash
+uvicorn business_os.api:app --reload
 
-| Method | Path | Query params | What it returns |
-|--------|------|--------------|-----------------|
-| GET | `/` | None | Service status and registered crew names |
-| GET | `/crews` | None | Crew descriptions and accepted params |
-| POST | `/run` | JSON body: `crew_name`, `params` | Runs a crew and returns its result |
-| GET | `/leads` | `status`, `min_score`, `limit` | Lead records ordered by ICP score |
-| GET | `/tasks` | `status`, `assignee_id`, `limit` | Task records with assignment and progress |
-| GET | `/employees` | None | Active employee records |
-| GET | `/candidates` | `role`, `min_score` | Candidate pipeline records |
-| GET | `/audit-log` | `crew`, `limit` | Audit log rows for agent actions |
-| GET | `/expenses` | `category`, `status`, `limit` | Expense records with vendor, amount, category, and status |
-| GET | `/customers` | `churn_risk`, `min_mrr`, `limit` | Customer records ordered by lowest health score first |
-| GET | `/reports` | `report_type`, `limit` | Recent reports with 300-character content previews |
+# Then:
+curl -X POST http://localhost:8000/run \
+  -H "Content-Type: application/json" \
+  -d '{"crew_name": "market_research", "params": {"topic": "AI automation"}}'
+```
 
-## Adding a new crew
+### Sample output (lead gen)
 
-1. Create `crews/your_crew.py` and define `build_your_crew()` following the existing pattern.
-2. Add any new DB models to `storage/database.py`.
-3. Add any new tools to `tools/shared_tools.py` with `@tool` decorator and `log_action` call.
-4. Register the crew in `orchestrator.py` `CREW_REGISTRY`.
-5. Add GET endpoints for any new tables in `api.py`.
+```
+Lead 'Zendesk' successfully saved (ID: a3f8c..., ICP Score: 85/100)
 
-## System Architecture & Agent Collaboration
+Business Model & Pain Points:
+Enterprise helpdesk SaaS with HIPAA-compliant verticals. Custom pricing for
+healthcare networks. High-margin enterprise tier starting at $150/seat/month.
 
-Business OS is designed as a highly collaborative, multi-crew system where agents do not run in isolation. Instead, they coordinate and collaborate using two primary paradigms: **Event/State Flows** and **Shared Relational Databases & Vector Memory**.
+High-Margin Indicators:
+Enterprise pricing tier, custom quotes, verticalized compliance packages
 
-### Agent Collaboration Flowchart
+--- CUSTOM COLD OUTREACH EMAIL ---
+Subject: Scaling Zendesk's healthcare compliance outreach
 
-The diagram below illustrates how triggers initiate the orchestrator, how sequential crews and cross-crew flows are managed, and how agents share state, memory, and database contexts:
+Hi Mikkel,
 
-```mermaid
-graph TD
-    %% Define styles for rich aesthetics
-    classDef orchestrator fill:#fdf,stroke:#d3d,stroke-width:2px;
-    classDef flow fill:#ddf,stroke:#33c,stroke-width:2px;
-    classDef crew fill:#dfd,stroke:#3c3,stroke-width:2px;
-    classDef agent fill:#f5f5f5,stroke:#666,stroke-width:1px;
-    classDef db fill:#ffd,stroke:#c90,stroke-width:2px;
-    classDef external fill:#fdd,stroke:#c33,stroke-width:1px;
-
-    %% Triggers & Entry points
-    subgraph Triggers ["Triggers & Entry Points"]
-        CLI["Command Line Interface"]
-        API["FastAPI REST API"]
-        Cron["Cron Daily Scheduler"]
-    end
-
-    Orchestrator["Master Orchestrator: orchestrator.py"]
-    class Orchestrator orchestrator;
-
-    CLI --> Orchestrator
-    API --> Orchestrator
-    Cron --> Orchestrator
-
-    %% Lead Gen Flow
-    subgraph LeadGenFlow ["B2B Lead Gen Flow: flows.py"]
-        direction TB
-        F_Start["1. Initialize Flow State"] --> F_MR["2. Conduct Market Research"]
-        F_MR --> F_MR_Crew["Launch Market Research Crew"]
-        F_MR_Crew --> F_State["Save Report to Flow State"]
-        F_State --> F_Lead["3. Discover High-Margin Leads"]
-        F_Lead --> F_Inject["Inject research report as context"]
-        F_Inject --> F_LG_Crew["Launch Lead Gen Crew"]
-        F_LG_Crew --> F_Save["Deterministic Python CRM Save"]
-    end
-    class LeadGenFlow flow;
-
-    Orchestrator -->|"run_crew('lead_gen')"| LeadGenFlow
-
-    %% Crews
-    subgraph MarketResearchCrew ["Market Research Crew"]
-        direction LR
-        A_Analyst["Market Analyst Agent"] -->|"researches topic & competitors"| A_Scout["Trend Scout Agent"]
-        A_Scout -->|"spots emerging trends"| A_Reporter["Research Reporter Agent"]
-    end
-    class MarketResearchCrew crew;
-    F_MR_Crew -.-> MarketResearchCrew
-
-    subgraph LeadGenCrew ["Lead Gen Crew"]
-        direction LR
-        A_Prospector["B2B Lead Prospector"] -->|"crawls & indexes website text"| A_Intel["High-Margin Intelligence Analyst"]
-        A_Intel -->|"queries vector store & web"| A_Outreach["CRM & Outreach Manager"]
-    end
-    class LeadGenCrew crew;
-    F_LG_Crew -.-> LeadGenCrew
-
-    %% Daily Ops Cycle
-    subgraph DailyOps ["Daily Operations Cycle"]
-        direction TB
-        T_Mgmt["Task Management Crew"]
-        Emp_Ops["Employee Operations Crew"]
-        T_Mgmt <-->|"Shared Database State"| Emp_Ops
-    end
-    class DailyOps flow;
-    Orchestrator -->|"run_all_daily_ops()"| DailyOps
-
-    subgraph TaskMgmtCrew ["Task Management Crew"]
-        direction LR
-        A_Assigner["Task Assigner Agent"] --> A_Tracker["Progress Tracker Agent"]
-        A_Tracker --> A_Escalation["Escalation Agent"]
-    end
-    class TaskMgmtCrew crew;
-    T_Mgmt -.-> TaskMgmtCrew
-
-    subgraph EmployeeOpsCrew ["Employee Operations Crew"]
-        direction LR
-        A_Checkin["Employee Check-in Bot"] --> A_Logger["Progress Logger Agent"]
-        A_Logger --> A_HR["HR Operations Bot"]
-    end
-    class EmployeeOpsCrew crew;
-    Emp_Ops -.-> EmployeeOpsCrew
-
-    %% Other Crews
-    Orchestrator -->|"run_crew('recruitment')"| Recruitment["Recruitment Crew"]
-    Orchestrator -->|"run_crew('finance')"| Finance["Finance Crew"]
-    Orchestrator -->|"run_crew('customer_success')"| CustomerSuccess["Customer Success Crew"]
-    class Recruitment,Finance,CustomerSuccess crew;
-
-    %% Sinks and Storages
-    Database[("SQL Database: SQLite / PostgreSQL")]
-    class Database db;
-
-    Pinecone[("Pinecone Vector Store")]
-    class Pinecone db;
-
-    Slack["Slack Workspace"]
-    class Slack external;
-
-    %% Data Connections
-    MarketResearchCrew -->|"saves report"| Database
-    LeadGenCrew -->|"saves lead & email drafts"| Database
-    A_Prospector -->|"scrapes web to vector store"| Pinecone
-    A_Intel -->|"queries embeddings"| Pinecone
-    TaskMgmtCrew -->|"assigns & updates tasks"| Database
-    TaskMgmtCrew -->|"Slack overdue alerts"| Slack
-    EmployeeOpsCrew -->|"Slack standup requests"| Slack
-    EmployeeOpsCrew -->|"reads employee & task metrics"| Database
-    Recruitment -->|"saves candidate pipeline"| Database
-    Finance -->|"saves invoices & dashboard reports"| Database
-    CustomerSuccess -->|"updates customer health scores"| Database
-    CustomerSuccess -->|"Slack churn alerts"| Slack
+I recently came across Zendesk and was impressed by your dedicated focus on
+providing HIPAA-compliant, verticalized solutions for healthcare networks...
 ```
 
 ---
 
-### How the Agents Collaborate Together
+## 🤖 Agent Roster
 
-The Business OS architecture thrives on complex, inter-agent workflows across the following four paradigms:
+### Lead Generation Crew
 
-#### 1. Cross-Crew Flow Coordination (`flows.py`)
-Instead of executing in isolation, crews can be chained together inside a **CrewAI Flow**. The primary example is the B2B Lead Gen Flow:
-- **Phase 1: Market Intelligence**: The `Market Research Crew` (Market Analyst, Trend Scout, Research Reporter) executes first. It performs deep search and structures a macro-level report on trends and pain points within a target industry (e.g., *Fintech*).
-- **Context Injection**: The flow captures this text report and dynamically *injects* it into the `Lead Gen Crew`'s B2B Lead Prospector task.
-- **Phase 2: Targeted Prospecting**: With the macro pain points injected, the B2B Lead Prospector knows *exactly* which niches to hunt down. The Lead Gen Crew then uses this to locate real prospects, ingest their data, score them, and write organic, hyper-personalized outreach.
+| Agent | Role | Tools | Output |
+|---|---|---|---|
+| Lead Prospector | Discover target companies and scrape their websites | Web Search, Crawl4AI + Pinecone | List of real prospects indexed in vector memory |
+| Intel Analyst | Extract pricing, tech stack, contacts from scraped data | Pinecone Query, Web Search | Deep intelligence profiles per prospect |
+| Outreach Manager | Score leads and draft personalized cold emails | Deterministic ICP Scorer, DB Query | ICP scores + bespoke outreach drafts |
+| Compliance Auditor | QA email drafts, reject placeholders, save to CRM | Save Lead to CRM, DB Query | Polished leads persisted to database |
 
-#### 2. Collaborative Shared Database State
-The database (`business_os.db`) acts as a persistent message board and coordination medium between different crews that run at different times:
-- **Finance & Lead Generation**: The `Lead Gen Crew` places qualified leads in the `Lead` table. Later, when the `Finance Crew` runs (e.g., every Friday), its Invoice Generator queries the database for all `qualified` leads and dynamically drafts plain-text invoices tailored to their specific data.
-- **Task Management & Employee Operations (Daily Ops)**: The `Task Management Crew` updates the status of tasks in the database. The `Employee Operations Crew` reads those same tasks to generate custom standup logs and alerts the team if an employee has stale updates or too many concurrent `in_progress` tasks.
+### Market Research Crew
 
-#### 3. Vector Storage Memory Pool (`Pinecone`)
-Agents share information asynchronously via a central Pinecone vector memory layer:
-- The **B2B Lead Prospector** finds potential companies and uses Crawl4AI to scrape their website content. It converts these pages into dense vector embeddings and saves them to Pinecone.
-- The **High-Margin Intelligence Analyst** queries that exact same Pinecone namespace to pull out pricing tiers, tech stack mentions, and business metrics. It uses this shared vector pool to enrich the lead, ensuring the **CRM & Outreach Manager** gets factual, high-fidelity context for outreach drafting rather than making assumptions.
+| Agent | Role | Tools | Output |
+|---|---|---|---|
+| Market Analyst | Map competitors, market size, funding activity | Web Search | Structured market overview |
+| Trend Scout | Identify 5 emerging trends with evidence | Web Search | Trends with time horizons |
+| Research Reporter | Synthesize into executive-ready report | Save Report | Report saved to database |
 
-#### 4. Human-in-the-Loop & Audit Logging
-- **Alert Escalations**: The system communicates its results directly to human workspaces. The `Task Management`, `Employee Operations`, and `Customer Success` crews all share a Slack integration to post high-priority updates (e.g. overdue tasks, at-risk employees, or customer churn alerts).
-- **Audit Trails**: Every write operation (e.g., saving a candidate, updating an expense, logging task progress) triggers a structured database transaction in the `AuditLog` table. This serves as a ledger of all autonomous actions taken by the agents, ensuring full compliance and transparency.
+### Recruitment Crew
 
+| Agent | Role | Tools | Output |
+|---|---|---|---|
+| JD Writer | Craft compelling job descriptions | — | Ready-to-post job description |
+| Talent Sourcer | Find candidates on LinkedIn, GitHub, communities | Web Search | 10 candidate profiles |
+| Resume Screener | Score candidates against requirements, save top ones | Save Candidate | Scored candidate pipeline |
+
+### Task Management Crew
+
+| Agent | Role | Tools | Output |
+|---|---|---|---|
+| Task Assigner | Match unassigned tasks to employees by role and load | Assign Task, DB Query | Tasks assigned with deadlines |
+| Progress Tracker | Monitor in-progress tasks, flag at-risk ones | Get Employee Tasks, Get Overdue, DB Query | Progress health report |
+| Escalation Agent | Send Slack alerts for blocked/overdue tasks | Get Overdue, Slack, Log Progress | Slack notifications sent |
+
+### Employee Operations Crew
+
+| Agent | Role | Tools | Output |
+|---|---|---|---|
+| Check-in Bot | Send daily standup prompts to all employees | Get Employees, Slack | Standup messages delivered |
+| Progress Logger | Compile task reports, find stale updates | DB Query, Employee Report | Stale-update employee list |
+| HR Operations Bot | Flag overloaded or disengaged employees | Get Employees, Employee Report, Slack, DB Query | Burnout alerts + utilization flags |
+
+### Finance Crew
+
+| Agent | Role | Tools | Output |
+|---|---|---|---|
+| Expense Tracker | Categorize uncategorized expenses, flag outliers | DB Query, Save Expense, Expenses Summary, Categorize | Categorized expenses with flags |
+| Invoice Generator | Draft invoices for qualified leads | DB Query, Save Report | Invoice reports saved |
+| KPI Dashboard Builder | Compute weekly business KPIs | DB Query, Expenses Summary, Save Report | Weekly KPI dashboard report |
+
+### Customer Success Crew
+
+| Agent | Role | Tools | Output |
+|---|---|---|---|
+| Health Scorer | Compute health score (0–100) for every customer | DB Query, Update Customer Health | Health scores + churn risk levels |
+| Churn Detector | Alert team on at-risk accounts via Slack | DB Query, Slack, Save Report | Slack churn alerts + report |
+| NPS Outreach Agent | Draft check-in emails for healthy customers | DB Query, Save Report | NPS outreach email drafts |
+
+---
+
+## ⚙️ Configuration
+
+### LLM Provider
+
+Business OS supports four LLM backends. Set `LLM_PROVIDER` in your `.env`:
+
+| Provider | `LLM_PROVIDER` | API Key Needed | Default Model |
+|---|---|---|---|
+| Ollama (local) | `ollama` | None | `llama3.1` |
+| Google Gemini | `gemini` | `GEMINI_API_KEY` | `gemini/gemini-2.5-flash` |
+| OpenAI | `openai` | `OPENAI_API_KEY` | `gpt-4o` |
+| OpenRouter | `openrouter` | `OPENROUTER_API_KEY` | `google/gemini-2.5-flash:free` |
+
+### Environment Variables
+
+| Variable | Required | Default | Purpose |
+|---|---|---|---|
+| `LLM_PROVIDER` | No | `ollama` | LLM backend to use |
+| `OPENROUTER_API_KEY` | If using OpenRouter | — | OpenRouter API key |
+| `OPENROUTER_MODEL` | No | `google/gemini-2.5-flash:free` | OpenRouter model name |
+| `GEMINI_API_KEY` | If using Gemini or Pinecone | — | Google AI Studio key (also used for embeddings) |
+| `GEMINI_MODEL` | No | `gemini/gemini-2.5-flash` | Gemini model name |
+| `OLLAMA_MODEL` | No | `llama3.1` | Ollama model name |
+| `OLLAMA_BASE_URL` | No | `http://localhost:11434` | Ollama server URL |
+| `OPENAI_API_KEY` | If using OpenAI | — | OpenAI API key |
+| `OPENAI_MODEL` | No | `gpt-4o` | OpenAI model name |
+| `DATABASE_URL` | No | `sqlite:///business_os.db` | SQLAlchemy connection string |
+| `SERPER_API_KEY` | For web search | — | Serper.dev API key |
+| `PINECONE_API_KEY` | For vector memory | — | Pinecone API key |
+| `PINECONE_INDEX_NAME` | No | `business-os-knowledge` | Pinecone index name |
+| `SLACK_BOT_TOKEN` | For Slack alerts | — | Slack bot OAuth token |
+| `SENDGRID_API_KEY` | No | — | SendGrid key (future) |
+| `COMPANY_NAME` | No | `Acme Corp` | Company name used in agent outputs |
+| `ICP_DESCRIPTION` | No | `B2B SaaS companies with 10-200 employees in the US` | Ideal customer profile for lead scoring |
+
+> **⚠️ Never commit real API keys.** The `.env` file is gitignored. Use `.env.example` as your template.
+
+### Scheduled Jobs
+
+The cron scheduler runs crews automatically:
+
+```bash
+python -m business_os.triggers.scheduler        # Start scheduler
+python -m business_os.triggers.scheduler --dry-run  # Preview schedule
+```
+
+| Schedule | Time | Crew | Default Params |
+|---|---|---|---|
+| Daily | 07:00 | `task_management` | — |
+| Daily | 07:15 | `employee_ops` | — |
+| Monday | 09:00 | `market_research` | topic: "AI automation tools weekly digest" |
+| Monday | 09:30 | `lead_gen` | industry: "B2B SaaS", leads: 10 |
+| Friday | 18:00 | `finance` | period: 7 days |
+| Friday | 18:30 | `customer_success` | health_threshold: 40 |
+
+---
+
+## 📊 Example Outputs
+
+### Market Research Report
+
+```
+══════════════════════════════════════════════════
+  MARKET RESEARCH REPORT: AI Automation Tools
+  Report ID: rpt_7a3c1e
+══════════════════════════════════════════════════
+
+EXECUTIVE SUMMARY
+The AI automation market is projected at $14.2B (2025), growing 32% YoY.
+Key segments: RPA + AI copilots, autonomous agents, and workflow orchestration.
+
+TOP 5 COMPETITORS
+1. UiPath      — Enterprise RPA. $1.3B revenue. Focus: regulated industries.
+2. Zapier AI   — SMB workflow automation. 7M+ users. Focus: no-code AI actions.
+3. Make.com    — Visual automation builder. Growing 45% YoY in EU markets.
+4. n8n         — Open-source alternative. 40K GitHub stars. Self-hosted focus.
+5. CrewAI      — Multi-agent framework. Fastest-growing in agent orchestration.
+
+TOP 5 TRENDS
+1. Agent-to-agent orchestration (3-month horizon)
+2. RAG-powered enterprise copilots (1-year horizon)
+3. Vertical AI agents for compliance-heavy industries (1-year horizon)
+4. Open-source agent frameworks replacing SaaS (3-year horizon)
+5. Human-in-the-loop guardrails as a product category (3-month horizon)
+
+RECOMMENDATIONS
+1. Target regulated verticals (healthcare, finance) where compliance is a moat.
+2. Build RAG pipelines as a core differentiator over prompt-only competitors.
+3. Ship agent audit trails — enterprises will require them for procurement.
+```
+
+### Weekly KPI Dashboard
+
+```
+══════════════════════════════════════════════════
+  WEEKLY KPI REPORT — May 23, 2025
+══════════════════════════════════════════════════
+
+LEAD PIPELINE
+  New leads this week:       12
+  Average ICP score:         67/100
+  Leads qualified:           8
+  Outreach emails drafted:   8
+
+TASK OPERATIONS
+  Tasks completed:           23
+  Tasks overdue:             3
+  Tasks blocked:             1
+
+HIRING PIPELINE
+  Active roles:              2
+  Candidates in pipeline:    18
+  Avg fit score:             72/100
+
+WEEKLY BURN RATE
+  SaaS:        $2,340.00
+  Marketing:   $1,875.00
+  Travel:      $890.00
+  Payroll:     $12,500.00
+  ─────────────────────
+  Total:       $17,605.00
+
+CUSTOMER HEALTH
+  Active customers:          34
+  At-risk (health < 40):     4
+  Churn alerts sent:         2
+```
+
+### Invoice Draft
+
+```
+══════════════════════════════════════════════════
+  INVOICE INV-a3f8c291
+══════════════════════════════════════════════════
+
+Bill To:    Zendesk, Inc.
+Contact:    Mikkel Svane
+Date:       2025-05-23
+Due Date:   2025-06-22
+
+Line Items:
+  1. Consulting Services — AI Integration      $8,500.00
+  2. Platform Access Fee — Enterprise Tier      $2,400.00
+                                               ──────────
+  Subtotal:                                    $10,900.00
+  Tax (18%):                                    $1,962.00
+                                               ──────────
+  TOTAL DUE:                                   $12,862.00
+```
+
+---
+
+## 📁 Project Structure
+
+```
+business_os/
+├── orchestrator.py          # Central entry point — routes crews by name
+├── flows.py                 # Cross-crew Flow engine (Market Research → Lead Gen)
+├── api.py                   # FastAPI REST layer with 10 endpoints
+├── crews/
+│   ├── lead_generation_crew.py     # 4 agents, Crawl4AI + Pinecone pipeline
+│   ├── market_research_crew.py     # 3 agents, web search → report
+│   ├── recruitment_crew.py         # 3 agents, JD → source → screen
+│   ├── task_management_crew.py     # 3 agents, assign → track → escalate
+│   ├── employee_ops_crew.py        # 3 agents, standup → log → HR flags
+│   ├── finance_crew.py             # 3 agents, expenses → invoices → KPIs
+│   └── customer_success_crew.py    # 3 agents, health → churn → NPS
+├── tools/
+│   ├── shared_tools.py      # 12 reusable tools (search, DB, Slack, etc.)
+│   ├── pinecone_tools.py    # Vector memory read/write tools
+│   └── scraper_bot.py       # Crawl4AI scraper + Gemini embeddings
+├── config/
+│   ├── settings.py          # Multi-provider LLM builder + env config
+│   └── api_keys.py          # Placeholder defaults (never commit real keys)
+├── storage/
+│   ├── database.py          # SQLAlchemy models (Lead, Task, Employee, etc.)
+│   └── seed.py              # Sample data seeder
+├── triggers/
+│   └── scheduler.py         # Cron-style job scheduler
+├── .env.example             # Environment variable template
+└── requirements.txt         # Python dependencies
+```
+
+---
+
+## 🔌 REST API Reference
+
+Start the server:
+
+```bash
+uvicorn business_os.api:app --reload
+# Docs at http://localhost:8000/docs
+```
+
+| Method | Endpoint | Params | Returns |
+|---|---|---|---|
+| `GET` | `/` | — | Service status + registered crew names |
+| `GET` | `/crews` | — | Crew descriptions and accepted params |
+| `POST` | `/run` | `{"crew_name": "...", "params": {...}}` | Crew execution result |
+| `GET` | `/leads` | `status`, `min_score`, `limit` | Leads ordered by ICP score |
+| `GET` | `/tasks` | `status`, `assignee_id`, `limit` | Tasks with progress data |
+| `GET` | `/employees` | — | Active employee records |
+| `GET` | `/candidates` | `role`, `min_score` | Recruitment pipeline |
+| `GET` | `/audit-log` | `crew`, `limit` | Agent action audit trail |
+| `GET` | `/expenses` | `category`, `status`, `limit` | Expense records |
+| `GET` | `/customers` | `churn_risk`, `min_mrr`, `limit` | Customer health data |
+| `GET` | `/reports` | `report_type`, `limit` | Reports with content previews |
+
+---
+
+## 🧩 Extending Business OS
+
+### Add a new crew
+
+1. Create `crews/your_crew.py` — define agents, tasks, and `build_your_crew()`
+2. Add DB models to `storage/database.py` if needed
+3. Add tools to `tools/shared_tools.py` with `@tool` decorator
+4. Register in `orchestrator.py` → `CREW_REGISTRY`
+5. Add API endpoints in `api.py` for any new tables
+
+### Swap the LLM
+
+Change one line in `.env`:
+
+```bash
+LLM_PROVIDER=gemini          # or: ollama, openai, openrouter
+GEMINI_API_KEY=your-key-here
+```
+
+All 22 agents switch to the new provider. No code changes.
+
+### Add a tool
+
+```python
+# tools/shared_tools.py
+from crewai.tools import tool
+
+@tool("Your New Tool")
+def your_tool(param: str) -> str:
+    """Description of what it does."""
+    # Your logic here
+    log_action("agent_name", "crew_name", "action", "entity", entity_id, {})
+    return "result"
+```
+
+---
+
+## 🤝 Contributing
+
+1. Fork the repository
+2. Create a feature branch: `git checkout -b feat/your-feature`
+3. Commit changes: `git commit -m "Add your feature"`
+4. Push: `git push origin feat/your-feature`
+5. Open a Pull Request
+
+---
+
+## 📄 License
+
+MIT License. See [LICENSE](LICENSE) for details.
