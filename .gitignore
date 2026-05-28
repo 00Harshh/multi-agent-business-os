@@ -1,0 +1,28 @@
+# Local environment files (contains secrets)
+.env
+.env.local
+.env.*
+
+# Python-specific files
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+ENV/
+env/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Local databases and SQLite files
+*.db
+*.sqlite3
+
+# Logs
+*.log
+logs/
+
+# OS-specific files
+.DS_Store
+Thumbs.db
