@@ -14,22 +14,6 @@
 
 ---
 
-## 🌌 Hero Visualization
-
-Below is the conceptual layout for the premium platform hero graphics. This banner serves as the core visual anchor, establishing the modern dark-mode aesthetic of Business OS.
-
-<div align="center">
-  <a href="#-quick-start">
-    <img src="docs/images/hero_banner.png" alt="Business OS - Premium Agentic Workflow Banner" width="100%" style="border-radius: 14px; border: 1px solid #1e293b; box-shadow: 0 20px 40px -15px rgba(0,0,0,0.7); margin: 20px 0;" />
-  </a>
-  <p><em>▲ Recommended Aspect Ratio: 2:1 (1280px × 640px) | Style Accent: Royal Indigo to Deep Purple Gradients (#6366f1 ➜ #a855f7)</em></p>
-</div>
-
-### 🎨 Hero Graphic Design Concept & Prompt
-> **Midjourney / Flux Production Prompt:**
-> `/imagine prompt: A high-end modern B2B SaaS landing page hero banner, dark mode interface, 1280x640 resolution. In the center, a holographic 3D network of autonomous glowing AI agents mapped as vibrant nodes. Bright purple and electric blue laser paths connect the nodes, showing data moving dynamically. In the background, a subtle grid pattern and a soft, dark purple gradient glow (#0B001A to #020208). Sleek glassmorphism dashboards with glowing metrics float on either side, displaying abstract task completion graphs, high-end, clean lines, futuristic enterprise AI feel, style of Linear, Vercel, and Stripe websites, photorealistic, 8k resolution, ray tracing, sharp focus, volumetric lighting --ar 2:1 --v 6.0`
-
----
 
 ## ⚡ SaaS Platform Metrics
 
