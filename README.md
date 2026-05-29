@@ -60,20 +60,16 @@ graph TD
     classDef memory fill:#170f07,stroke:#fb923c,stroke-width:1.5px,color:#fff;
 
     %% Workflow Layout
-    User([👤 User Trigger]) :::user
-    API[🔌 FastAPI Gateway / CLI] :::gateway
-    Orchestrator[🔮 System Orchestrator] :::brain
-    FlowEngine{🧠 Flow Engine <br> cross-crew chaining} :::brain
-    
-    %% Crews
-    Agents[🤖 Autonomous Agents] :::worker
-    PythonOps[⚙️ Deterministic Ops] :::worker
-    
-    %% Downstreams
-    Toolbox[🧰 Custom Agent Tools] :::tools
-    MemStore[(💾 Vector Memory <br> Pinecone & DB Cache)] :::memory
-    Slack[💬 Slack Notification] :::gateway
-    Response([✨ Structured DB & Email Output]) :::user
+    User(["👤 User Trigger"])
+    API["🔌 FastAPI Gateway / CLI"]
+    Orchestrator["🔮 System Orchestrator"]
+    FlowEngine{"🧠 Flow Engine <br> cross-crew chaining"}
+    Agents["🤖 Autonomous Agents"]
+    PythonOps["⚙️ Deterministic Ops"]
+    Toolbox["🧰 Custom Agent Tools"]
+    MemStore[("💾 Vector Memory <br> Pinecone & DB Cache")]
+    Slack["💬 Slack Notification"]
+    Response(["✨ Structured DB & Email Output"])
 
     %% Connections
     User -->|CLI / API POST| API
@@ -92,6 +88,18 @@ graph TD
     
     Orchestrator -->|Slack Alert Escalation| Slack
     Orchestrator -->|Persist to DB| Response
+
+    %% Apply Classes
+    class User user;
+    class API gateway;
+    class Orchestrator brain;
+    class FlowEngine brain;
+    class Agents worker;
+    class PythonOps worker;
+    class Toolbox tools;
+    class MemStore memory;
+    class Slack gateway;
+    class Response user;
 ```
 
 ---
@@ -124,8 +132,8 @@ graph TB
     end
 
     subgraph StorageLayer ["💾 INTEGRATED STORAGE & CHANNELS"]
-        SQL[(🗄️ SQLite / Postgres DB)]
-        Vector[(🌲 Pinecone Vector Index)]
+        SQL[("🗄️ SQLite / Postgres DB")]
+        Vector[("🌲 Pinecone Vector Index")]
         SlackAPI["💬 Slack App Gateway"]
     end
 
@@ -201,34 +209,74 @@ Detailed request parsing path showcasing caching rules (24h Serper cache, 5m Dat
 
 ```mermaid
 graph TD
+    %% Custom Styling
     classDef decision fill:#1e1e38,stroke:#818cf8,stroke-width:1px,color:#fff;
     classDef proc fill:#18181b,stroke:#52525b,stroke-width:1px,color:#fff;
     classDef db fill:#0c211a,stroke:#10b981,stroke-width:1px,color:#fff;
 
-    Req[📥 Incoming Request] --> Validate{🔍 Valid Params?}:::decision
-    Validate -->|No| Reject[❌ Return 400 Bad Request]:::proc
-    Validate -->|Yes| CacheCheck{💾 Check Cache <br> utils/cache.py}:::decision
+    %% Nodes
+    Req["📥 Incoming Request"]
+    Validate{"🔍 Valid Params?"}
+    Reject["❌ Return 400 Bad Request"]
+    CacheCheck{"💾 Check Cache <br> utils/cache.py"}
+    ReturnCache["⚡ Return Cached Output"]
+    Router{"🧭 Classify reasoning depth <br> model_router.py"}
+    
+    ProModel["🔴 Gemini 2.5 Pro"]
+    FlashModel["🟡 Gemini 2.5 Flash"]
+    LiteModel["🟢 Gemini 2.0 Flash Lite"]
+    PyOps["⚙️ Deterministic Python Op"]
+
+    Execute["🤖 Execute CrewAI Task"]
+    RunCode["⚙️ Execute Pure Python Code"]
+    CacheWrite["💾 Populate Cache Layer"]
+    DBWrite[("🗄️ Save to SQLite/PostgreSQL")]
+    Response["📤 Return Response Output"]
+
+    %% Connections
+    Req --> Validate
+    Validate -->|No| Reject
+    Validate -->|Yes| CacheCheck
 
     %% Caching Path
-    CacheCheck -->|Cache Hit| ReturnCache[⚡ Return Cached Output]:::proc
-    CacheCheck -->|Cache Miss| Router{🧭 Classify reasoning depth <br> model_router.py}:::decision
+    CacheCheck -->|Cache Hit| ReturnCache
+    CacheCheck -->|Cache Miss| Router
 
     %% Routing Decisions
-    Router -->|Creative/Strategy| ProModel[🔴 Gemini 2.5 Pro]:::proc
-    Router -->|Scraping/Analysis| FlashModel[🟡 Gemini 2.5 Flash]:::proc
-    Router -->|Classification/Form| LiteModel[🟢 Gemini 2.0 Flash Lite]:::proc
-    Router -->|Arithmetic/Match| PyOps[⚙️ Deterministic Python Op]:::proc
+    Router -->|Creative/Strategy| ProModel
+    Router -->|Scraping/Analysis| FlashModel
+    Router -->|Classification/Form| LiteModel
+    Router -->|Arithmetic/Match| PyOps
 
     %% Run and Persist
-    ProModel --> Execute[🤖 Execute CrewAI Task]:::proc
+    ProModel --> Execute
     FlashModel --> Execute
     LiteModel --> Execute
-    PyOps --> RunCode[⚙️ Execute Pure Python Code]:::proc
+    PyOps --> RunCode
 
-    Execute --> CacheWrite[💾 Populate Cache Layer]:::proc
-    RunCode --> DBWrite[(🗄️ Save to SQLite/PostgreSQL)]:::db
+    Execute --> CacheWrite
+    RunCode --> DBWrite
     CacheWrite --> DBWrite
-    DBWrite --> Response[📤 Return Response Output]:::proc
+    DBWrite --> Response
+
+    %% Apply Classes
+    class Validate decision;
+    class CacheCheck decision;
+    class Router decision;
+    
+    class Req proc;
+    class Reject proc;
+    class ReturnCache proc;
+    class ProModel proc;
+    class FlashModel proc;
+    class LiteModel proc;
+    class PyOps proc;
+    class Execute proc;
+    class RunCode proc;
+    class CacheWrite proc;
+    class Response proc;
+    
+    class DBWrite db;
 ```
 
 ---
@@ -238,31 +286,32 @@ Topology blueprint detailing cloud deployment, memory pools, Slack webhook struc
 
 ```mermaid
 graph LR
+    %% Custom Styling
     classDef serv fill:#0f172a,stroke:#3b82f6,color:#fff;
     classDef stor fill:#111827,stroke:#10b981,color:#fff;
     classDef ext fill:#1c1917,stroke:#ea580c,color:#fff;
 
     subgraph Client ["👨‍💻 CLIENT LAYER"]
-        Web[Admin Web Dashboard]
-        Terminal[CLI Terminal Client]
+        Web["Admin Web Dashboard"]
+        Terminal["CLI Terminal Client"]
     end
 
     subgraph Compute ["☁️ CLOUD COMPUTE CLUSTER"]
-        API[FastAPI Server <br> Gunicorn / Uvicorn] :::serv
-        Sched[Celery Worker / Cron triggers] :::serv
-        LocalModel[Local Ollama Node] :::serv
+        API["FastAPI Server <br> Gunicorn / Uvicorn"]
+        Sched["Celery Worker / Cron triggers"]
+        LocalModel["Local Ollama Node"]
     end
 
     subgraph State ["🗄️ PERSISTENT DATA POOL"]
-        SQLite[(Local SQLite / Postgres RDS)] :::stor
-        CacheStore[(In-Memory Redis / TTL Cache)] :::stor
-        Pinecone[(Pinecone Vector Cloud)] :::stor
+        SQLite[("Local SQLite / Postgres RDS")]
+        CacheStore[("In-Memory Redis / TTL Cache")]
+        Pinecone[("Pinecone Vector Cloud")]
     end
 
     subgraph Gateways ["🔌 THIRD-PARTY GATEWAYS"]
-        Google[Google AI Studio API] :::ext
-        Serper[Serper Web Search API] :::ext
-        Slack[Slack App Webhook API] :::ext
+        Google["Google AI Studio API"]
+        Serper["Serper Web Search API"]
+        Slack["Slack App Webhook API"]
     end
 
     %% Web connections
@@ -281,6 +330,19 @@ graph LR
     %% Vector memory
     API --> Pinecone
     LocalModel --> CacheStore
+
+    %% Apply Classes
+    class API serv;
+    class Sched serv;
+    class LocalModel serv;
+
+    class SQLite stor;
+    class CacheStore stor;
+    class Pinecone stor;
+
+    class Google ext;
+    class Serper ext;
+    class Slack ext;
 ```
 
 ---
